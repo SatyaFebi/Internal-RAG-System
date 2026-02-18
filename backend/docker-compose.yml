@@ -4,9 +4,9 @@ services:
     container_name: postgres-rag
     restart: always
     environment:
-      POSTGRES_USER: satya
-      POSTGRES_PASSWORD: rahasia
-      POSTGRES_DB: rag_db
+      POSTGRES_USER: ${DOCKER_POSTGRES_USER}
+      POSTGRES_PASSWORD: ${DOCKER_POSTGRES_PASSWORD}
+      POSTGRES_DB: ${DOCKER_POSTGRES_DB}
     ports:
       - "5432:5432"
     volumes:
@@ -25,9 +25,9 @@ services:
       - DB_TYPE=postgresdb
       - DB_POSTGRESDB_HOST=db
       - DB_POSTGRESDB_PORT=5432
-      - DB_POSTGRESDB_DATABASE=rag_db
-      - DB_POSTGRESDB_USER=satya
-      - DB_POSTGRESDB_PASSWORD=rahasia
+      - DB_POSTGRESDB_DATABASE=${DOCKER_POSTGRES_DB}
+      - DB_POSTGRESDB_USER=${DOCKER_POSTGRES_USER}
+      - DB_POSTGRESDB_PASSWORD=${DOCKER_POSTGRES_PASSWORD}
     depends_on:
       - db
     volumes:
