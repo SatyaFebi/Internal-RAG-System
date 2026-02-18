@@ -1,0 +1,40 @@
+services:
+  db:
+    image: ankane/pgvector
+    container_name: postgres-rag
+    restart: always
+    environment:
+      POSTGRES_USER: satya
+      POSTGRES_PASSWORD: rahasia
+      POSTGRES_DB: rag_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./postgres_data:/var/lib/postgresql/data
+
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: n8n-ai
+    restart: always
+    ports:
+      - "5678:5678"
+    environment:
+      - N8N_HOST=localhost
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=http
+      - DB_TYPE=postgresdb
+      - DB_POSTGRESDB_HOST=db
+      - DB_POSTGRESDB_PORT=5432
+      - DB_POSTGRESDB_DATABASE=rag_db
+      - DB_POSTGRESDB_USER=satya
+      - DB_POSTGRESDB_PASSWORD=rahasia
+    depends_on:
+      - db
+    volumes:
+      - ./n8n_data:/home/node/.n8n
+      # Folder buat naruh file PDF/TXT yang mau di-ingest AI
+      - ./ai_docs:/home/node/ai_docs 
+
+networks:
+  default:
+    name: rag-network
