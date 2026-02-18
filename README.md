@@ -8,7 +8,7 @@ A high-performance stack designed for modern AI engineering:
 
 * **Frontend:** Vue.js 3 (Composition API) with Tailwind CSS for a reactive and smooth chat experience.
 * **Backend:** Laravel 12 (PHP 8.2+) providing a robust API and service layer.
-* **AI Engine:** [Ollama](https://ollama.com/) (Running **Llama 3.2 3B** & **DeepSeek-R1**).
+* **AI Engine:** [Ollama](https://ollama.com/) (Running **Llama 3.2 3B**).
 * **Vector Database:** PostgreSQL with the [pgvector](https://github.com/pgvector/pgvector) extension.
 * **Embedding Model:** `mxbai-embed-large` (1024 dimensions).
 * **Orchestrator:** n8n (Automated data ingestion and preprocessing).
