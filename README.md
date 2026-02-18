@@ -45,7 +45,7 @@ A high-performance stack designed for modern AI engineering:
 
 1.  **Clone the Repository:**
     ```bash
-    git clone [https://github.com/yourusername/internal-rag-system.git](https://github.com/yourusername/internal-rag-system.git)
+    git clone https://github.com/SatyaFebi/Internal-RAG-System.git
     cd internal-rag-system
     ```
 
