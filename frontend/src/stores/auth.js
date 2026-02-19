@@ -3,8 +3,8 @@ import axios from '../lib/axios';
 
 export const useAuthStore = defineStore('auth', {
     state: () => ({
-        user: null,
-        token: localStorage.getItem('token') || null,
+        user: JSON.parse(localStorage.getItem('userRAG')) || null,
+        token: localStorage.getItem('tokenRAG') || null,
         loading: false,
         error: null,
     }),
@@ -23,7 +23,7 @@ export const useAuthStore = defineStore('auth', {
                 this.user = response.data.user;
                 
                 localStorage.setItem('tokenRAG', this.token);
-                localStorage.setItem('userRAG', this.user)
+                localStorage.setItem('userRAG', JSON.stringify(this.user));
                 
                 return response.data;
             } catch (err) {
@@ -43,10 +43,11 @@ export const useAuthStore = defineStore('auth', {
                 this.user = null;
                 this.token = null;
                 localStorage.removeItem('tokenRAG');
-                localStorage.removeItem('userRAG')
+                localStorage.removeItem('userRAG');
                 window.location.href = '/login';
             }
         },
+
 
         async fetchUser() {
             if (!this.token) return;

@@ -7,7 +7,16 @@ use Illuminate\Database\Eloquent\Model;
 class Document extends Model
 {
    protected $table = 'documents';
-   protected $fillable = [
-      
-   ];
+    protected $fillable = [
+       'content',
+       'metadata'
+    ];
+
+    protected function casts(): array
+    {
+        return [
+            'metadata' => 'array',
+        ];
+    }
 }
+
