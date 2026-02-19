@@ -13,6 +13,7 @@ const isUploading = ref(false);
 const fileInput = ref(null);
 const uploadStatus = ref('');
 const messagesContainer = ref(null);
+const currentModel = ref('-');
 
 const scrollToBottom = async () => {
     await nextTick();
@@ -30,21 +31,66 @@ const sendChat = async () => {
     isLoading.value = true;
     scrollToBottom();
 
+    // Create a placeholder for the assistant's message
+    const assistantMessage = ref({ 
+        role: 'assistant', 
+        content: '', 
+        context: [] 
+    });
+    chatHistory.value.push(assistantMessage.value);
+    const lastIndex = chatHistory.value.length - 1;
+
     try {
-        const res = await axios.post('/chat', { message });
-        chatHistory.value.push({ 
-            role: 'assistant', 
-            content: res.data.answer,
-            context: res.data.context_used 
+        const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/chat`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${localStorage.getItem('tokenRAG')}`,
+                'Accept': 'text/event-stream'
+            },
+            body: JSON.stringify({ message })
         });
+
+        if (!response.ok) throw new Error('Network response was not ok');
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+            
+            const lines = buffer.split('\n');
+            buffer = lines.pop(); // Keep the last partial line in buffer
+
+            for (const line of lines) {
+                if (!line.trim()) continue;
+                try {
+                    const data = JSON.parse(line);
+                    if (data.type === 'metadata') {
+                        chatHistory.value[lastIndex].context = data.context;
+                        currentModel.value = data.model;
+                    } else if (data.type === 'content') {
+                        chatHistory.value[lastIndex].content += data.content;
+                        scrollToBottom();
+                    }
+                } catch (e) {
+                    console.warn('Failed to parse stream line:', line, e);
+                }
+            }
+        }
     } catch (error) {
-        console.error(error);
-        chatHistory.value.push({ role: 'assistant', content: 'Maaf, terjadi kesalahan saat menghubungi server AI.' });
+        console.error('Chat error:', error);
+        chatHistory.value[lastIndex].content = 'Maaf, terjadi kesalahan saat menghubungi server AI.';
     } finally {
         isLoading.value = false;
         scrollToBottom();
     }
 };
+
 
 const handleFileUpload = async (event) => {
     const file = event.target.files[0];
@@ -136,7 +182,7 @@ onMounted(() => {
                     </li>
                     <li class="flex gap-3">
                         <span class="text-indigo-500 font-bold">2.</span>
-                        Tunggu AI memproses embedding (vektorisasi).
+                        Tunggu AI memproses dokumen.
                     </li>
                     <li class="flex gap-3">
                         <span class="text-indigo-500 font-bold">3.</span>
@@ -154,7 +200,7 @@ onMounted(() => {
                     <div class="w-3 h-3 bg-green-500 rounded-full animate-pulse"></div>
                     <div>
                         <h1 class="font-bold text-white">RAG Assistant</h1>
-                        <p class="text-xs text-zinc-500">Llama 3.2</p>
+                        <p class="text-xs text-zinc-500 uppercase tracking-wider">{{ currentModel }}</p>
                     </div>
                 </div>
                 <div class="flex items-center gap-4">

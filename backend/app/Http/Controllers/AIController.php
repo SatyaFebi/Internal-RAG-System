@@ -109,22 +109,57 @@ class AIController extends Controller
          "JAWABAN:";
 
 
-      $model = config('services.ollama.model');
-      if (!str_contains($model, ':')) {
-          $model .= ':latest';
-      }
+        $model = config('services.ollama.model');
+        if (!str_contains($model, ':')) {
+            $model .= ':latest';
+        }
 
-      $response = Http::timeout(300)->post(config('services.ollama.url') . '/api/generate', [
-         'model' => $model,
-         'prompt' => $prompt,
-         'stream' => false,
-      ]);
+        return response()->stream(function () use ($prompt, $model, $contextRecords) {
+            $response = Http::withOptions(['stream' => true])
+                ->timeout(300)
+                ->post(config('services.ollama.url') . '/api/generate', [
+                    'model' => $model,
+                    'prompt' => $prompt,
+                    'stream' => true,
+                ]);
 
-      return response()->json([
-          'answer' => $response->json()['response'] ?? 'Gagal mendapatkan jawaban dari AI.',
-          'context_used' => $contextRecords,
-      ]);
+            $body = $response->toPsrResponse()->getBody();
 
+            // Kirim metadata di awal
+            echo json_encode([
+                'type' => 'metadata',
+                'context' => $contextRecords,
+                'model' => $model
+            ]) . "\n";
+            
+            if (ob_get_level() > 0) {
+                ob_flush();
+            }
+            flush();
+
+            while (!$body->eof()) {
+                $line = \GuzzleHttp\Psr7\Utils::readLine($body);
+                if ($line) {
+                    $decoded = json_decode($line, true);
+                    if ($decoded) {
+                        echo json_encode([
+                            'type' => 'content',
+                            'content' => $decoded['response'] ?? '',
+                            'done' => $decoded['done'] ?? false
+                        ]) . "\n";
+                        
+                        if (ob_get_level() > 0) {
+                            ob_flush();
+                        }
+                        flush();
+                    }
+                }
+            }
+        }, 200, [
+            'Content-Type' => 'text/event-stream',
+            'X-Accel-Buffering' => 'no', // Penting untuk Nginx/Proxy
+            'Cache-Control' => 'no-cache',
+            'Connection' => 'keep-alive',
+        ]);
     }
 }
-

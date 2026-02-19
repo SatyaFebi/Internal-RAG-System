@@ -1,7 +1,7 @@
 import axios from 'axios';
 
 const instance = axios.create({
-    baseURL: 'http://localhost:8000/api', // Adjust if your backend port is different
+    baseURL: import.meta.env.VITE_API_BASE_URL,
     headers: {
         'X-Requested-With': 'XMLHttpRequest',
     },
