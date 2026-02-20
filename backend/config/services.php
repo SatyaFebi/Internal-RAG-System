@@ -37,8 +37,13 @@ return [
 
     'ollama' => [
         'url' => env('OLLAMA_BASE_URL', 'http://localhost:11434'),
-        'model' => env('OLLAMA_MODEL', 'llama3.2'),
+        'model' => env('OLLAMA_MODEL', 'llama3.2:1b'),
         'embed_model' => env('OLLAMA_EMBED_MODEL', 'mxbai-embed-large'),
+    ],
+
+    'gemini' => [
+        'api_key' => env('GEMINI_API_KEY'),
+        'model' => env('GEMINI_MODEL', 'gemini-2.5-flash-lite'),
     ],
 
 ];

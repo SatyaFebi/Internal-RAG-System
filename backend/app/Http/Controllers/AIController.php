@@ -2,8 +2,11 @@
 
 namespace App\Http\Controllers;
 
+use App\Jobs\EvaluateChatJob;
+use App\Models\ChatLog;
 use App\Models\Document;
 use App\Services\OllamaServices;
+use App\Services\AI\AIManager;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
@@ -14,7 +17,7 @@ class AIController extends Controller
 
     public function __construct(OllamaServices $ollama)
     {
-         $this->ollama = $ollama;
+        $this->ollama = $ollama;
     }
 
     public function store(Request $request)
@@ -37,7 +40,7 @@ class AIController extends Controller
             } elseif ($extension === 'pdf') {
                 if (class_exists(\Smalot\PdfParser\Parser::class)) {
                     try {
-                        $parser = new \Smalot\PdfParser\Parser();
+                        $parser = new \Smalot\PdfParser\Parser;
                         $pdf = $parser->parseFile($file->getRealPath());
                         $text = $pdf->getText();
                     } catch (\Exception $e) {
@@ -56,22 +59,37 @@ class AIController extends Controller
             return response()->json(['status' => 'error', 'message' => 'Tidak ada teks yang diupload atau diproses.'], 422);
         }
 
-        // Chunking sederhana (per 1000 karakter misal)
-        $chunks = str_split($text, 1000);
+        // Chunking lebih pintar: Berdasarkan paragraf atau baris baru agar tidak memotong kata secara paksa
+        $chunksRaw = preg_split('/(\n\s*\n|\n)/', $text, -1, PREG_SPLIT_NO_EMPTY);
+        $chunks = [];
+        $currentChunk = "";
+        
+        foreach ($chunksRaw as $segment) {
+            if (strlen($currentChunk) + strlen($segment) < 1200) {
+                $currentChunk .= $segment . "\n";
+            } else {
+                if (!empty(trim($currentChunk))) $chunks[] = trim($currentChunk);
+                $currentChunk = $segment . "\n";
+            }
+        }
+        if (!empty(trim($currentChunk))) $chunks[] = trim($currentChunk);
 
         foreach ($chunks as $chunk) {
-            if (empty(trim($chunk))) continue;
+            if (empty(trim($chunk))) {
+                continue;
+            }
+
 
             $embedding = $this->ollama->getEmbedding($chunk);
-            $vectorString = '[' . implode(',', $embedding) . ']';
+            $vectorString = '['.implode(',', $embedding).']';
 
             $doc = Document::create([
                 'content' => $chunk,
                 'metadata' => [
                     'source' => $source,
                     'created_at' => now(),
-                    'full_text_hash' => md5($text)
-                ]
+                    'full_text_hash' => md5($text),
+                ],
             ]);
 
             DB::statement('UPDATE documents SET embedding = ? WHERE id = ?', [$vectorString, $doc->id]);
@@ -83,70 +101,83 @@ class AIController extends Controller
         ]);
     }
 
-
     public function chat(Request $request)
     {
-      $userInput = $request->input('message');
+        $userInput = $request->input('message');
 
-      $queryEmbedding = $this->ollama->getEmbedding($userInput);
-      $vectorString = '[' . implode(',', $queryEmbedding) . ']';
+        $queryEmbedding = $this->ollama->getEmbedding($userInput);
+        $vectorString = '['.implode(',', $queryEmbedding).']';
 
-      $contextRecords = DB::table('documents')
-         ->select('content')
-         ->orderByRaw("embedding <=> ?::vector", [$vectorString])
-         ->limit(5)
-         ->get();
+        // Hybrid Search: Vector + Full Text Search
+        $vectorResults = Document::query()
+            ->select('id', 'content', 'metadata')
+            ->orderByRaw('embedding <=> ?::vector', [$vectorString])
+            ->limit(5)
+            ->get();
 
-      $contextText = $contextRecords->pluck('content')->implode("\n");
+        $textQuery = str_replace(['+', '-'], ' ', $userInput);
+        $ftsResults = Document::query()
+            ->select('id', 'content', 'metadata')
+            ->whereRaw("to_tsvector('simple', content) @@ plainto_tsquery('simple', ?)", [$textQuery])
+            ->limit(5)
+            ->get();
 
-      $prompt = "Anda adalah asisten AI yang hanya boleh menjawab berdasarkan dokumen yang diberikan. \n" .
-         "Gunakan konteks di bawah ini untuk menjawab pertanyaan User. \n" .
-         "Jika jawaban tidak ada di dalam konteks, jawab saja bahwa Anda tidak menemukan informasi tersebut di dokumen basis pengetahuan. \n" .
-         "DILARANG memberikan jawaban dari pengetahuan umum Anda sendiri.\n\n" .
-         "KONTEKS:\n" .
-         "---------------------\n" . $contextText . "\n---------------------\n\n" .
-         "PERTANYAAN: " . $userInput . "\n\n" .
-         "JAWABAN:";
+        // Merge and Deduplicate by ID
+        $contextRecords = $vectorResults->concat($ftsResults)->unique('id');
 
-
-        $model = config('services.ollama.model');
-        if (!str_contains($model, ':')) {
-            $model .= ':latest';
+        $contextList = '';
+        foreach ($contextRecords as $record) {
+            $sourceName = $record->metadata['source'] ?? "Dokumen Tanpa Nama";
+            $contextList .= "[DOKUMEN: {$sourceName}]:\n".$record->content."\n\n";
         }
 
-        return response()->stream(function () use ($prompt, $model, $contextRecords) {
-            $response = Http::withOptions(['stream' => true])
-                ->timeout(300)
-                ->post(config('services.ollama.url') . '/api/generate', [
-                    'model' => $model,
-                    'prompt' => $prompt,
-                    'stream' => true,
-                ]);
+        $prompt = "Anda adalah asisten AI yang sangat disiplin dan presisi. Tugas Anda adalah memberikan jawaban yang TEPAT SASARAN berdasarkan KONTEKS.\n\n".
+           "PERATURAN KERAS:\n".
+           "1. JAWAB DENGAN SINGKAT dan TO-THE-POINT.\n".
+           "2. Fokus HANYA pada data yang ditanyakan oleh User. ABAIKAN informasi fitur atau narasi lain yang tidak relevan dengan pertanyaan.\n".
+           "3. Jika pertanyaan meminta list data (seperti 'apa saja', 'daftar', 'data apa'), berikan dalam bentuk bullet points yang diambil dari teks asli.\n".
+           "4. WAJIB mencantumkan nama dokumen di setiap akhir kalimat/poin. Format: [NamaDokumen.txt].\n".
+           "5. JANGAN menuliskan kesimpulan atau rangkuman umum jika tidak ditanyakan.\n".
+           "6. Jika jawaban tidak ditemukan di KONTEKS, jawab jujur: 'Maaf, informasi spesifik tersebut tidak ditemukan dalam dokumen.'\n\n".
+           "KONTEKS DOKUMEN:\n".
+           "---------------------\n".$contextList."---------------------\n\n".
+           'PERTANYAAN USER: '.$userInput."\n\n".
+           'JAWABAN SINGKAT & TEPAT:';
 
+
+
+        $ai = AIManager::getProvider();
+
+        return response()->stream(function () use ($prompt, $contextRecords, $userInput, $ai) {
+            $response = $ai->stream($prompt);
             $body = $response->toPsrResponse()->getBody();
 
             // Kirim metadata di awal
             echo json_encode([
                 'type' => 'metadata',
                 'context' => $contextRecords,
-                'model' => $model
-            ]) . "\n";
-            
+                'model' => env('AI_PROVIDER', 'ollama'),
+            ])."\n";
+
             if (ob_get_level() > 0) {
                 ob_flush();
             }
             flush();
 
-            while (!$body->eof()) {
+            $fullAnswer = '';
+            while (! $body->eof()) {
                 $line = \GuzzleHttp\Psr7\Utils::readLine($body);
                 if ($line) {
-                    $decoded = json_decode($line, true);
-                    if ($decoded) {
+                    $chunk = $ai->parseChunk($line);
+
+                    if (!empty($chunk)) {
+                        $fullAnswer .= $chunk;
+
                         echo json_encode([
                             'type' => 'content',
-                            'content' => $decoded['response'] ?? '',
-                            'done' => $decoded['done'] ?? false
-                        ]) . "\n";
+                            'content' => $chunk,
+                            'done' => false, // Simplified for stream
+                        ])."\n";
                         
                         if (ob_get_level() > 0) {
                             ob_flush();
@@ -155,6 +186,16 @@ class AIController extends Controller
                     }
                 }
             }
+
+            // Simpan log & jalankan evaluasi (RAGAS-like)
+            $log = ChatLog::create([
+                'question' => $userInput,
+                'context' => $contextRecords->toArray(),
+                'answer' => $fullAnswer,
+                'model' => env('AI_PROVIDER', 'ollama'),
+            ]);
+
+            EvaluateChatJob::dispatch($log);
         }, 200, [
             'Content-Type' => 'text/event-stream',
             'X-Accel-Buffering' => 'no', // Penting untuk Nginx/Proxy

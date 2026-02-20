@@ -14,6 +14,21 @@ const fileInput = ref(null);
 const uploadStatus = ref('');
 const messagesContainer = ref(null);
 const currentModel = ref('-');
+const selectedSource = ref(null);
+const isSourceModalOpen = ref(false);
+
+const openSourceModal = (sourceName, context) => {
+    selectedSource.value = {
+        name: sourceName,
+        snippets: context.filter(c => (c.metadata?.source || 'Tanpa Nama') === sourceName)
+    };
+    isSourceModalOpen.value = true;
+};
+
+const closeSourceModal = () => {
+    isSourceModalOpen.value = false;
+    selectedSource.value = null;
+};
 
 const scrollToBottom = async () => {
     await nextTick();
@@ -199,7 +214,7 @@ onMounted(() => {
                 <div class="flex items-center gap-3">
                     <div class="w-3 h-3 bg-green-500 rounded-full animate-pulse"></div>
                     <div>
-                        <h1 class="font-bold text-white">RAG Assistant</h1>
+                        <h1 class="font-bold text-white">Satya RAG</h1>
                         <p class="text-xs text-zinc-500 uppercase tracking-wider">{{ currentModel }}</p>
                     </div>
                 </div>
@@ -237,14 +252,32 @@ onMounted(() => {
                         <p class="whitespace-pre-wrap text-sm md:text-base">{{ chat.content }}</p>
                         
                         <!-- Context used badge -->
-                        <div v-if="chat.context && chat.context.length > 0" class="mt-3 pt-3 border-t border-zinc-700">
-                            <p class="text-[10px] text-zinc-500 uppercase font-bold mb-2">Sumber Konteks:</p>
+                        <div v-if="chat.context && chat.context.length > 0" class="mt-4 pt-3 border-t border-zinc-700/50">
+                            <p class="text-[10px] text-zinc-400 uppercase font-bold mb-2 flex items-center gap-1.5">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                </svg>
+                                Referensi Dokumen
+                            </p>
                             <div class="flex flex-wrap gap-2">
-                                <span v-for="(ctx, i) in chat.context" :key="i" class="text-[10px] bg-zinc-900 px-2 py-1 rounded border border-zinc-700 text-zinc-400">
-                                    Snippet #{{ i + 1 }}
-                                </span>
+                                <template v-if="chat.context && chat.context.length > 0">
+                                    <button 
+                                        v-for="source in [...new Set(chat.context.map(ctx => ctx.metadata?.source || 'Tanpa Nama'))]" 
+                                        :key="source"
+                                        @click="openSourceModal(source, chat.context)"
+                                        class="group flex items-center gap-1.5 text-[10px] bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 px-2.5 py-1 rounded-lg border border-indigo-500/20 font-medium transition-all active:scale-95"
+                                        title="Klik untuk melihat detil baris asli"
+                                    >
+                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                                        </svg>
+                                        {{ source }}
+                                    </button>
+                                </template>
                             </div>
                         </div>
+
                     </div>
                 </div>
 
@@ -281,9 +314,60 @@ onMounted(() => {
             </div>
         </div>
     </div>
+
+    <!-- Source Details Modal -->
+    <Transition name="fade">
+        <div v-if="isSourceModalOpen" class="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div class="absolute inset-0 bg-black/80 backdrop-blur-sm" @click="closeSourceModal"></div>
+            
+            <div class="relative w-full max-w-2xl bg-zinc-900 border border-zinc-800 rounded-3xl shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200">
+                <!-- Modal Header -->
+                <div class="px-6 py-4 border-b border-zinc-800 flex items-center justify-between bg-zinc-900/50">
+                    <div class="flex items-center gap-3">
+                        <div class="p-2 bg-indigo-500/10 rounded-xl">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-indigo-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                            </svg>
+                        </div>
+                        <div>
+                            <h3 class="font-bold text-white">Detil Konten Dokumen</h3>
+                            <p class="text-xs text-zinc-500">{{ selectedSource?.name }}</p>
+                        </div>
+                    </div>
+                    <button @click="closeSourceModal" class="p-2 hover:bg-zinc-800 rounded-full transition-colors">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                    </button>
+                </div>
+
+                <!-- Modal Content -->
+                <div class="p-6 max-h-[70vh] overflow-y-auto space-y-4">
+                    <div v-for="(snippet, i) in selectedSource?.snippets" :key="i" class="bg-zinc-950 p-4 rounded-xl border border-zinc-800/50 relative group">
+                        <span class="absolute top-2 right-4 text-[10px] text-zinc-700 font-mono italic">Part #{{ i + 1 }}</span>
+                        <p class="text-sm text-zinc-300 leading-relaxed whitespace-pre-wrap">{{ snippet.content }}</p>
+                    </div>
+                </div>
+
+                <!-- Modal Footer -->
+                <div class="px-6 py-4 border-t border-zinc-800 bg-zinc-900/50 text-right">
+                    <button @click="closeSourceModal" class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-white rounded-xl text-sm font-medium transition-colors">
+                        Tutup
+                    </button>
+                </div>
+            </div>
+        </div>
+    </Transition>
 </template>
 
 <style scoped>
+.fade-enter-active, .fade-leave-active {
+    transition: opacity 0.2s ease;
+}
+.fade-enter-from, .fade-leave-to {
+    opacity: 0;
+}
+
 /* Hide scrollbar for Chrome, Safari and Opera */
 .overflow-y-auto::-webkit-scrollbar {
     display: none;
